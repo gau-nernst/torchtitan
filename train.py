@@ -122,6 +122,13 @@ def main(job_config: JobConfig):
     # swap to Float8Linear based on float8 configs
     float8_handler.convert_to_float8_training(model)
 
+    from torchao import quantize_
+    from torchao.prototype.quantized_training import bitnet_training, precompute_bitnet_scale_for_fsdp
+
+    use_bitnet = False
+    if use_bitnet:
+        quantize_(model.layers, bitnet_training())
+
     # log model size
     model_param_count = utils.get_num_params(model)
     num_flop_per_token = utils.get_num_flop_per_token(
@@ -312,6 +319,10 @@ def main(job_config: JobConfig):
             # calculate float8 dynamic amax/scale for all-parameter for FSDP2
             # it issues a single all-reduce for all parameters at once for better performance
             float8_handler.precompute_float8_dynamic_scale_for_fsdp(model_parts)
+
+            if use_bitnet:
+                for m in model_parts:
+                    precompute_bitnet_scale_for_fsdp(m)
 
             losses_since_last_log.append(loss)
 
