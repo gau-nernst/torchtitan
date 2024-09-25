@@ -127,25 +127,8 @@ def main(job_config: JobConfig):
 
     use_bitnet = os.environ.get("USE_BITNET", "") == "1"
     if use_bitnet:
-        from torchtitan.models.norms import RMSNorm
-
-        # remove old RMSNorm
-        for i in range(len(model.layers)):
-            model.layers[str(i)].attention_norm = torch.nn.Identity()
-            model.layers[str(i)].ffn_norm = torch.nn.Identity()
-
-        # insert new RMSNorm
-        def insert_rmsnorm(module: torch.nn.Module):
-            for name, child in module.named_children():
-                if isinstance(child, torch.nn.Linear):
-                    w = child.weight
-                    norm = RMSNorm(child.in_features).to(device=w.device, dtype=w.dtype)
-                    setattr(module, name, torch.nn.Sequential(norm, child))
-                else:
-                    insert_rmsnorm(child)
-
-        insert_rmsnorm(model.layers)
-
+        # NOTE: we can't insert extra RMSNorm before Linear layers in a simple way
+        # due to the way torchtitan initialize weights.
         quantize_(model.layers, bitnet_training())
 
     # log model size
