@@ -125,8 +125,27 @@ def main(job_config: JobConfig):
     from torchao import quantize_
     from torchao.prototype.quantized_training import bitnet_training, precompute_bitnet_scale_for_fsdp
 
-    use_bitnet = False
+    use_bitnet = os.environ.get("USE_BITNET", "") == "1"
     if use_bitnet:
+        from torchtitan.models.norms import RMSNorm
+
+        # remove old RMSNorm
+        for i in range(len(model.layers)):
+            model.layers[str(i)].attention_norm = torch.nn.Identity()
+            model.layers[str(i)].ffn_norm = torch.nn.Identity()
+
+        # insert new RMSNorm
+        def insert_rmsnorm(module: torch.nn.Module):
+            for name, child in module.named_children():
+                if isinstance(child, torch.nn.Linear):
+                    w = child.weight
+                    norm = RMSNorm(child.in_features).to(device=w.device, dtype=w.dtype)
+                    setattr(module, name, torch.nn.Sequential(norm, child))
+                else:
+                    insert_rmsnorm(child)
+
+        insert_rmsnorm(model.layers)
+
         quantize_(model.layers, bitnet_training())
 
     # log model size
